@@ -98,7 +98,7 @@ subscriptions model =
 view : Model -> Html Msg
 view model =
     div []
-        [ h2 [] [ text "Random Cats" ]
+        [ h2 [] [ text "Following Only You" ]
         , viewGif model
         ]
 
