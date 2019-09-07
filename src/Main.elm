@@ -129,6 +129,11 @@ viewGif model =
                     [ input [ value model.userId, onInput ChangeUserId ] []
                     , button [ onClick MorePlease ] [ text "検索" ]
                     ]
+                , p []
+                    [ text <| "あなただけをフォローしているQiitaユーザーは"
+                    , b [] [ text <| String.fromInt <| List.length filteredQiitaUserList ]
+                    , text "名です"
+                    ]
                 , ul [] <| List.map viewQiitaUser filteredQiitaUserList
                 ]
 
