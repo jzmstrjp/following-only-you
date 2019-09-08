@@ -30,13 +30,16 @@ type alias Model =
     { userId : UserId
     , status : Status
     , pageNumber : PageNumber
+    , totalPages : Int
+    , followersList : QiitaUserList
     }
 
 
 type Status
     = Failure Http.Error
     | Loading
-    | Success QiitaUserList
+    | GetListSuccess
+    | GetUserSuccess User
 
 
 initialUserId : UserId
@@ -49,6 +52,8 @@ init _ =
     ( { userId = initialUserId
       , status = Loading
       , pageNumber = 1
+      , totalPages = 0
+      , followersList = []
       }
     , getFollowers initialUserId 1
     )
@@ -59,7 +64,9 @@ init _ =
 
 
 type Msg
-    = MorePlease
+    = GetUser
+    | MorePlease
+    | GotUser (Result Http.Error User)
     | GotData (Result Http.Error QiitaUserList)
     | ChangeUserId String
 
@@ -70,16 +77,47 @@ update msg model =
         ChangeUserId userId ->
             ( { model | userId = userId }, Cmd.none )
 
+        GetUser ->
+            ( { model | status = Loading }, getUser model.userId )
+
         MorePlease ->
             ( { model | status = Loading }, getFollowers model.userId model.pageNumber )
+
+        GotUser result ->
+            case result of
+                Ok user ->
+                    ( { model
+                        | status = GetUserSuccess user
+                        , totalPages = culculateTotalPages user.followers_count
+                      }
+                    , getFollowers model.userId 1
+                    )
+
+                Err error ->
+                    ( { model | status = Failure error }, Cmd.none )
 
         GotData result ->
             case result of
                 Ok qiitaUserList ->
-                    ( { model | status = Success qiitaUserList }, Cmd.none )
+                    if model.pageNumber < model.totalPages then
+                        ( { model
+                            | status = Loading
+                            , pageNumber = model.pageNumber + 1
+                            , followersList = model.followersList ++ qiitaUserList
+                          }
+                        , getFollowers model.userId (model.pageNumber + 1)
+                        )
+
+                    else
+                        ( { model | status = GetListSuccess }, Cmd.none )
 
                 Err error ->
                     ( { model | status = Failure error }, Cmd.none )
+
+
+culculateTotalPages : Int -> Int
+culculateTotalPages followers_count =
+    followers_count // 100 + 1
 
 
 
@@ -113,28 +151,35 @@ viewGif model =
             in
             div []
                 [ text "見つかりませんでした"
-                , button [ onClick MorePlease ] [ text "Try Again!" ]
+                , button [ onClick GetUser ] [ text "Try Again!" ]
                 ]
 
         Loading ->
             text "Loading..."
 
-        Success qiitaUserList ->
+        GetUserSuccess user ->
+            div []
+                [ text <| String.fromInt user.followers_count
+                , br [] []
+                , text <| String.fromInt model.totalPages
+                ]
+
+        GetListSuccess ->
             let
-                filteredQiitaUserList =
-                    List.filter (\qiitaUser -> qiitaUser.followees_count == 1) qiitaUserList
+                filteredFollowersList =
+                    List.filter (\qiitaUser -> qiitaUser.followees_count == 1) model.followersList
             in
             div []
                 [ div []
                     [ input [ value model.userId, onInput ChangeUserId ] []
-                    , button [ onClick MorePlease ] [ text "検索" ]
+                    , button [ onClick GetUser ] [ text "検索" ]
                     ]
                 , p []
                     [ text <| "あなただけをフォローしているQiitaユーザーは"
-                    , b [] [ text <| String.fromInt <| List.length filteredQiitaUserList ]
+                    , b [] [ text <| String.fromInt <| List.length filteredFollowersList ]
                     , text "名です"
                     ]
-                , ul [] <| List.map viewQiitaUser filteredQiitaUserList
+                , ul [] <| List.map viewQiitaUser filteredFollowersList
                 ]
 
 
@@ -177,6 +222,10 @@ type alias UserId =
     String
 
 
+type alias User =
+    { followers_count : Int }
+
+
 type alias QiitaUser =
     { name : String
     , userId : UserId
@@ -188,6 +237,14 @@ type alias QiitaUser =
 
 type alias QiitaUserList =
     List QiitaUser
+
+
+getUser : UserId -> Cmd Msg
+getUser userId =
+    Http.get
+        { url = "https://qiita.com/api/v2/users/" ++ userId
+        , expect = Http.expectJson GotUser userDecoder
+        }
 
 
 getFollowers : UserId -> PageNumber -> Cmd Msg
@@ -205,6 +262,12 @@ getFollowers userId pageNumber =
         { url = url
         , expect = Http.expectJson GotData qiitaUserListDecoder
         }
+
+
+userDecoder : Decoder User
+userDecoder =
+    Json.Decode.map User
+        (field "followers_count" int)
 
 
 qiitaUserListDecoder : Decoder QiitaUserList
