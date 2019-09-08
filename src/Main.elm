@@ -51,7 +51,7 @@ init : () -> ( Model, Cmd Msg )
 init _ =
     ( { userId = initialUserId
       , status = Loading
-      , pageNumber = 1
+      , pageNumber = 0
       , totalPages = 0
       , followersList = []
       }
@@ -65,7 +65,6 @@ init _ =
 
 type Msg
     = GetUser
-    | MorePlease
     | GotUser (Result Http.Error User)
     | GotData (Result Http.Error QiitaUserList)
     | ChangeUserId String
@@ -78,10 +77,14 @@ update msg model =
             ( { model | userId = userId }, Cmd.none )
 
         GetUser ->
-            ( { model | status = Loading }, getUser model.userId )
-
-        MorePlease ->
-            ( { model | status = Loading }, getFollowers model.userId model.pageNumber )
+            ( { model
+                | status = Loading
+                , followersList = []
+                , totalPages = 0
+                , pageNumber = 0
+              }
+            , getUser model.userId
+            )
 
         GotUser result ->
             case result of
@@ -99,7 +102,7 @@ update msg model =
         GotData result ->
             case result of
                 Ok qiitaUserList ->
-                    if model.pageNumber < model.totalPages then
+                    if model.pageNumber < 3 then
                         ( { model
                             | status = Loading
                             , pageNumber = model.pageNumber + 1
@@ -117,7 +120,7 @@ update msg model =
 
 culculateTotalPages : Int -> Int
 culculateTotalPages followers_count =
-    followers_count // 100 + 1
+    followers_count // perPage + 1
 
 
 
@@ -158,11 +161,7 @@ viewGif model =
             text "Loading..."
 
         GetUserSuccess user ->
-            div []
-                [ text <| String.fromInt user.followers_count
-                , br [] []
-                , text <| String.fromInt model.totalPages
-                ]
+            text "Loading..."
 
         GetListSuccess ->
             let
@@ -255,13 +254,18 @@ getFollowers userId pageNumber =
                 "https://qiita.com"
                 [ "api", "v2", "users", userId, "followers" ]
                 [ Url.Builder.string "page" (String.fromInt pageNumber)
-                , Url.Builder.string "per_page" "100"
+                , Url.Builder.string "per_page" <| String.fromInt perPage
                 ]
     in
     Http.get
         { url = url
         , expect = Http.expectJson GotData qiitaUserListDecoder
         }
+
+
+perPage : Int
+perPage =
+    10
 
 
 userDecoder : Decoder User
